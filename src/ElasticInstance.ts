@@ -52,7 +52,7 @@ export default class ElasticInstance {
     this.childProcess = this._launchElasticsearch(elasticBin);
     // this.killerProcess = this._launchKiller(process.pid, this.childProcess.pid);
 
-    // this._waitForElastic();
+    this._waitForElastic();
 
     await launch;
     return this;
@@ -159,7 +159,7 @@ export default class ElasticInstance {
 
   stdoutHandler(message: string | Buffer): void {
     const line: string = message.toString();
-    console.log('[ES STDOUT]', line);
+    // console.log('[ES STDOUT]', line);
 
     if (/started/i.test(line)) {
       this.instanceReady();
