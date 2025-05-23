@@ -55,10 +55,13 @@ export default class ElasticMemoryServer {
   async _startInstance(): Promise<ElasticInstanceInfo> {
     const instOpts = this.opts.instance || {};
     const data: ElasticInstanceOpts = {
-      port: await getPort({ port: instOpts.port } || undefined),
+      port: await getPort({ port: instOpts.port }),
       ip: instOpts.ip || '127.0.0.1',
       dbPath: instOpts.dbPath,
       tmpDir: undefined,
+      args: instOpts.args,
+      binary: instOpts.binary,
+      env: instOpts.env
     };
 
     if (!data.dbPath) {
@@ -74,6 +77,8 @@ export default class ElasticMemoryServer {
       port: data.port,
       ip: data.ip,
       dbPath: data.dbPath,
+      args: data.args,
+      env: data.env
     });
 
     const instanceInfo: ElasticInstanceInfo = {

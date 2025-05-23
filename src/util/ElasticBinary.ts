@@ -4,7 +4,7 @@ import fs from 'fs';
 import ElasticBinaryDownloader from './ElasticBinaryDownloader';
 import { locationExists } from './functions';
 
-const LATEST_VERSION = '7.7.1';
+const LATEST_VERSION = '9.0.1';
 
 export default class ElasticBinary {
   version: string;

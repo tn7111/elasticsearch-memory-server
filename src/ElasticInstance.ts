@@ -3,6 +3,7 @@ import { ChildProcess, SpawnOptions } from 'child_process';
 import spawnChild from 'cross-spawn';
 import ElasticBinary from './util/ElasticBinary';
 import path from 'path';
+import fetch from 'node-fetch'; // если ты используешь Node <18
 
 export interface ElasticInstanceOpts {
   port?: number;
@@ -11,6 +12,7 @@ export interface ElasticInstanceOpts {
   tmpDir?: tmp.DirResult;
   args?: string[];
   binary?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export default class ElasticInstance {
@@ -50,6 +52,8 @@ export default class ElasticInstance {
     this.childProcess = this._launchElasticsearch(elasticBin);
     // this.killerProcess = this._launchKiller(process.pid, this.childProcess.pid);
 
+    // this._waitForElastic();
+
     await launch;
     return this;
   }
@@ -59,7 +63,7 @@ export default class ElasticInstance {
       await new Promise((resolve) => {
         if (this.childProcess) {
           this.childProcess.once(`exit`, () => {
-            resolve();
+            resolve(undefined);
           });
           this.childProcess.kill();
         }
@@ -70,7 +74,7 @@ export default class ElasticInstance {
       await new Promise((resolve) => {
         if (this.killerProcess) {
           this.killerProcess.once(`exit`, () => {
-            resolve();
+            resolve(undefined);
           });
           this.killerProcess.kill();
         }
@@ -82,16 +86,19 @@ export default class ElasticInstance {
 
   parseCmdArgs(): string[] {
     const { port, ip, dbPath, args } = this.opts;
-    const result: Array<string[]> = [];
+    const result: string[] = [];
 
-    if (ip) result.push(['-E', `network.host=${ip}`]);
-    if (port) result.push(['-E', `http.port=${port}`]);
+    if (ip) result.push('-E', `network.host=${ip}`);
+    if (port) result.push('-E', `http.port=${port}`);
     if (dbPath) {
-      result.push(['-E', `path.data=${path.resolve(dbPath, 'path')}`]);
-      result.push(['-E', `path.logs=${path.resolve(dbPath, 'logs')}`]);
+      result.push('-E', `path.data=${path.resolve(dbPath, 'path')}`);
+      result.push('-E', `path.logs=${path.resolve(dbPath, 'logs')}`);
     }
-    if (args) result.concat(args);
-    return result.flat();
+    if (args && Array.isArray(args)) {
+      result.push(...args);
+    }
+
+    return result;
   }
 
   /**
@@ -101,23 +108,35 @@ export default class ElasticInstance {
   _launchElasticsearch(elasticBin: string): ChildProcess {
     const spawnOpts: SpawnOptions = {
       stdio: 'pipe',
+      env: {
+        ...process.env,
+        ...(this.opts.env || {}),
+      },
     };
 
-    const childProcess = spawnChild(elasticBin, this.parseCmdArgs());
+    const childProcess = spawnChild(elasticBin, this.parseCmdArgs(), spawnOpts);
 
     if (childProcess.stderr) {
       childProcess.stderr.on('data', this.stderrHandler.bind(this));
     }
-    if (childProcess.stdout) {
+    if (!childProcess.stdout) {
+      console.log('[DEBUG] stdout is null');
+    } else {
+      console.log('[DEBUG] stdout is connected');
       childProcess.stdout.on('data', this.stdoutHandler.bind(this));
     }
+
     childProcess.on('close', this.closeHandler.bind(this));
     childProcess.on('error', this.errorHandler.bind(this));
+    childProcess.on('exit', (code, signal) => {
+      console.log(`[ES EXIT] code=${code} signal=${signal}`);
+    });
 
     return childProcess;
   }
 
   errorHandler(err: string): void {
+    console.error(err);
     this.instanceFailed(err);
   }
 
@@ -127,6 +146,7 @@ export default class ElasticInstance {
    */
   closeHandler(code: number): void {
     // this.debug(`CLOSE: ${code}`);
+    console.log(`CLOSE: ${code}`);
   }
 
   /**
@@ -134,14 +154,39 @@ export default class ElasticInstance {
    * @param message The STDERR line to write
    */
   stderrHandler(message: string | Buffer): void {
-    // this.debug(`STDERR: ${message.toString()}`);
+    console.error('[ES STDERR]', message.toString());
   }
 
   stdoutHandler(message: string | Buffer): void {
     const line: string = message.toString();
+    console.log('[ES STDOUT]', line);
 
     if (/started/i.test(line)) {
       this.instanceReady();
     }
+  }
+  private _waitForElastic(): void {
+    const url = `http://${this.opts.ip}:${this.opts.port}`;
+    const maxAttempts = 150;
+    let attempts = 0;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(url);
+        if (res.status === 200) {
+          console.log('[ES HTTP] Ready!');
+          clearInterval(interval);
+          this.instanceReady();
+        }
+      } catch (_) {
+        // server not up yet
+      }
+
+      attempts++;
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        this.instanceFailed(new Error('Timeout waiting for Elasticsearch HTTP'));
+      }
+    }, 200);
   }
 }
