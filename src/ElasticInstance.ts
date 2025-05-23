@@ -122,7 +122,7 @@ export default class ElasticInstance {
     if (!childProcess.stdout) {
       console.log('[DEBUG] stdout is null');
     } else {
-      console.log('[DEBUG] stdout is connected');
+      console.log('[ES STDOUT] stdout is connected');
       childProcess.stdout.on('data', this.stdoutHandler.bind(this));
     }
 
